@@ -1,6 +1,19 @@
 import Darwin
 import Foundation
 
+public struct BulkStopOutcome: Equatable {
+    public let requested: Int
+    public let failures: [String]
+
+    public init(requested: Int, failures: [String]) {
+        self.requested = requested
+        self.failures = failures
+    }
+
+    public var stopped: Int { requested - failures.count }
+    public var isCompleteSuccess: Bool { failures.isEmpty }
+}
+
 public enum ActionError: LocalizedError {
     case tmuxUnavailable
     case signalFailed(String)
@@ -31,11 +44,27 @@ public enum ServerActions {
         let signal = force ? SIGKILL : SIGTERM
         let group = server.process.processGroupID
 
-        if group > 1, kill(-group, signal) == 0 { return }
+        // Signalling our own group would take the app down with the server.
+        if group > 1, group != getpgrp(), kill(-group, signal) == 0 { return }
         // The group may already be gone, or belong to a session we cannot signal; try the pid.
         if kill(server.pid, signal) == 0 { return }
         if errno == ESRCH { return }  // already dead, which is what we wanted
         throw ActionError.signalFailed(String(cString: strerror(errno)))
+    }
+
+    /// Stops several servers, carrying on past failures so one stubborn process does not strand
+    /// the rest, and reporting what did not die.
+    @discardableResult
+    public static func stop(_ servers: [DevServer], force: Bool = false) -> BulkStopOutcome {
+        var failures: [String] = []
+        for server in servers {
+            do {
+                try stop(server, force: force)
+            } catch {
+                failures.append("\(server.label): \(error.localizedDescription)")
+            }
+        }
+        return BulkStopOutcome(requested: servers.count, failures: failures)
     }
 
     public static func isRunning(pid: Int32) -> Bool {

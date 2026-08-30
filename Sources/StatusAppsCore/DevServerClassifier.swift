@@ -13,7 +13,6 @@ public enum DevServerClassifier {
         "bun": .bun,
         "deno": .deno,
         "python": .python,
-        "python3": .python,
         "ruby": .ruby,
         "java": .java,
         "postgres": .postgres,
@@ -36,14 +35,43 @@ public enum DevServerClassifier {
             .sorted { $0.footprint > $1.footprint }
     }
 
+    /// Servers bucketed by runtime, biggest group first, so a bulk action can offer "every Metro"
+    /// without offering to take Postgres down with it.
+    public static func groupedByKind(_ servers: [DevServer]) -> [(kind: DevServerKind, servers: [DevServer])] {
+        Dictionary(grouping: servers, by: \.kind)
+            .map { (kind: $0.key, servers: $0.value) }
+            .sorted {
+                $0.servers.count != $1.servers.count
+                    ? $0.servers.count > $1.servers.count
+                    : $0.kind.rawValue < $1.kind.rawValue
+            }
+    }
+
     // MARK: - Kind
 
     static func kind(for process: RunningProcess) -> DevServerKind? {
         let markers = matchedMarkers(in: process.arguments)
         if markers.contains("expo") || markers.contains("metro") { return .metro }
-        if let kind = allowedExecutables[process.executableName] { return kind }
+
+        if let kind = allowedExecutables[normalize(process.executableName)] { return kind }
+        // Homebrew's Python runs from `Python.app/Contents/MacOS/Python`, so the path says
+        // "Python" while argv[0] says "python3". Either one is good enough to recognise it.
+        if let launcher = process.arguments.first,
+           let kind = allowedExecutables[normalize((launcher as NSString).lastPathComponent)] {
+            return kind
+        }
+
         // A recognised tool run through an unlisted interpreter still counts.
         return markers.isEmpty ? nil : .node
+    }
+
+    /// Runtimes ship under names that carry their version and their own capitalisation:
+    /// `Python`, `python3.14`, `php8.2`, `node20`. Compare them stripped of both.
+    static func normalize(_ executableName: String) -> String {
+        let lowercased = executableName.lowercased()
+        let base = lowercased.reversed().drop { $0.isNumber || $0 == "." }.reversed()
+        // A name made entirely of digits keeps its digits rather than becoming empty.
+        return base.isEmpty ? lowercased : String(base)
     }
 
     /// A marker matches a whole path component, never a bare substring: `/node_modules/.bin/expo`

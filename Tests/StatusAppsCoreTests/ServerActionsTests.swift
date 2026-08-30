@@ -61,3 +61,77 @@ final class ServerActionsTests: XCTestCase {
         XCTAssertTrue(ServerActions.isRunning(pid: getpid()))
     }
 }
+
+extension ServerActionsTests {
+
+    private func devServer(pid: Int32, pgid: Int32, label: String = "victim") -> DevServer {
+        DevServer(
+            process: Fixtures.process(
+                pid: pid, pgid: pgid, executablePath: "/bin/sleep",
+                arguments: ["sleep", "30"], workingDirectory: "/tmp", ports: [9999]
+            ),
+            kind: .node,
+            label: label
+        )
+    }
+
+    private func spawnSleep() throws -> Process {
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        child.arguments = ["30"]
+        try child.run()
+        return child
+    }
+
+    /// The production path: a dev server runs in its own process group, and stopping it signals
+    /// the group so a `yarn start` parent goes down with its `node` child.
+    func testStopEndsARealProcessViaItsProcessGroup() throws {
+        let child = try spawnSleep()
+        let pid = child.processIdentifier
+        XCTAssertNotEqual(getpgid(pid), getpgrp(), "precondition: the child has its own group")
+
+        try ServerActions.stop(devServer(pid: pid, pgid: getpgid(pid)))
+        child.waitUntilExit()
+
+        XCTAssertFalse(child.isRunning)
+    }
+
+    /// If a scanned process ever reported our own process group, signalling it would take the app
+    /// down along with the server. Stopping must fall through to the pid instead.
+    ///
+    /// Were the guard missing, this test would kill the test runner rather than fail.
+    func testStopNeverSignalsTheCallersOwnProcessGroup() throws {
+        let child = try spawnSleep()
+
+        try ServerActions.stop(devServer(pid: child.processIdentifier, pgid: getpgrp()))
+        child.waitUntilExit()
+
+        XCTAssertFalse(child.isRunning, "the pid fallback should still have stopped it")
+        XCTAssertTrue(ServerActions.isRunning(pid: getpid()), "the caller must survive")
+    }
+
+    func testStoppingSomethingAlreadyGoneIsNotAnError() throws {
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        child.arguments = ["0"]
+        try child.run()
+        let pid = child.processIdentifier
+        child.waitUntilExit()
+
+        XCTAssertNoThrow(try ServerActions.stop(devServer(pid: pid, pgid: getpgrp())))
+    }
+
+    func testBulkStopReportsWhatSucceeded() {
+        let outcome = ServerActions.stop([DevServer]())
+
+        XCTAssertEqual(outcome, BulkStopOutcome(requested: 0, failures: []))
+        XCTAssertTrue(outcome.isCompleteSuccess)
+    }
+
+    func testBulkOutcomeCountsSuccessesAgainstFailures() {
+        let outcome = BulkStopOutcome(requested: 5, failures: ["a: no", "b: no"])
+
+        XCTAssertEqual(outcome.stopped, 3)
+        XCTAssertFalse(outcome.isCompleteSuccess)
+    }
+}

@@ -59,6 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             stop: { [weak self] server, force in
                 self?.perform("Stop") { try ServerActions.stop(server, force: force) }
             },
+            stopMany: { [weak self] servers in
+                self?.confirmAndStop(servers)
+            },
             clean: { [weak self] server in
                 self?.perform("Clean cache") {
                     let removed = ServerActions.cleanCaches(for: server)
@@ -101,6 +104,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+    }
+
+    /// Asks before a bulk stop, listing the processes by name rather than only their count, and
+    /// defaults to Cancel so a stray click cannot take down a row of servers.
+    private func confirmAndStop(_ servers: [DevServer]) {
+        guard !servers.isEmpty else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = servers.count == 1
+            ? "¿Parar 1 proceso?"
+            : "¿Parar \(servers.count) procesos?"
+        alert.informativeText = Formatters.bulkStopSummary(servers)
+        alert.addButton(withTitle: "Cancelar")
+        let stopButton = alert.addButton(withTitle: "Parar")
+        stopButton.hasDestructiveAction = true
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = ServerActions.stop(servers)
+            DispatchQueue.main.async { [weak self] in
+                self?.refresh()
+                guard !outcome.isCompleteSuccess else { return }
+                self?.presentBulkFailure(outcome)
+            }
+        }
+    }
+
+    private func presentBulkFailure(_ outcome: BulkStopOutcome) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Se pararon \(outcome.stopped) de \(outcome.requested)"
+        alert.informativeText = outcome.failures.joined(separator: "\n")
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     private func presentFailure(action: String, error: Error) {

@@ -108,3 +108,24 @@ extension FormattersTests {
         XCTAssertEqual(Formatters.recentRow(known, now: seen), "bun — worker · hace 0s")
     }
 }
+
+extension FormattersTests {
+
+    /// The dialog has to name what dies, not just count it.
+    func testBulkStopSummaryListsEachProcess() {
+        let started = Fixtures.metroInWorktree.startedAt
+        let now = started.addingTimeInterval(9 * 86_400 + 22 * 3_600)
+
+        let summary = Formatters.bulkStopSummary([metro], now: now)
+
+        XCTAssertEqual(summary, ":8082  metro — humand-mobile/oli-barge-in  ·  9d 22h")
+    }
+
+    func testBulkStopSummaryHasOneLinePerServer() {
+        let servers = DevServerClassifier.classify(Fixtures.all)
+
+        let summary = Formatters.bulkStopSummary(servers)
+
+        XCTAssertEqual(summary.split(separator: "\n").count, servers.count)
+    }
+}

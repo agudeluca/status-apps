@@ -5,6 +5,7 @@ import StatusAppsCore
 /// a pure function of its inputs and never touches the system itself.
 struct MenuActions {
     var stop: (DevServer, Bool) -> Void
+    var stopMany: ([DevServer]) -> Void
     var clean: (DevServer) -> Void
     var rerun: (DevServer) -> Void
     var rerunKnown: (KnownServer) -> Void
@@ -45,6 +46,11 @@ enum MenuBuilder {
             for server in context.servers {
                 menu.addItem(serverItem(server, context: context, actions: actions))
             }
+        }
+
+        if !context.servers.isEmpty {
+            menu.addItem(.separator())
+            menu.addItem(bulkStopItem(context.servers, actions: actions))
         }
 
         if !context.recent.isEmpty {
@@ -136,6 +142,38 @@ enum MenuBuilder {
         }
 
         return submenu
+    }
+
+    /// Bulk stop is offered per runtime rather than as one blunt "kill everything": a list that
+    /// mixes Metro bundlers with the Postgres you need running makes a single action a trap.
+    private static func bulkStopItem(_ servers: [DevServer], actions: MenuActions) -> NSMenuItem {
+        let groups = DevServerClassifier.groupedByKind(servers)
+
+        guard groups.count > 1 else {
+            return ClosureMenuItem(title: "Matar todos (\(servers.count))") {
+                actions.stopMany(servers)
+            }
+        }
+
+        let item = NSMenuItem(title: "Matar…", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+
+        for group in groups {
+            submenu.addItem(
+                ClosureMenuItem(title: "Todos los \(group.kind.displayName) (\(group.servers.count))") {
+                    actions.stopMany(group.servers)
+                }
+            )
+        }
+
+        submenu.addItem(.separator())
+        submenu.addItem(ClosureMenuItem(title: "Todo (\(servers.count))") {
+            actions.stopMany(servers)
+        })
+
+        item.submenu = submenu
+        return item
     }
 
     private static func recentItem(

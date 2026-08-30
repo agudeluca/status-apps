@@ -69,6 +69,15 @@ public enum Formatters {
         return "\(known.kind.displayName) — \(known.label)\(port) · hace \(age)"
     }
 
+    /// The body of the confirmation dialog: one line per process, so the choice is made against
+    /// the actual list rather than a count.
+    public static func bulkStopSummary(_ servers: [DevServer], now: Date = Date()) -> String {
+        servers.map { server in
+            let port = server.primaryPort.map { ":\($0)" } ?? "—"
+            return "\(port)  \(server.kind.displayName) — \(server.label)  ·  \(uptime(server.uptime(at: now)))"
+        }.joined(separator: "\n")
+    }
+
     public static func swap(_ usage: SwapUsage) -> String {
         let percent = Int((usage.fraction * 100).rounded())
         return "Swap \(memory(usage.used)) / \(memory(usage.total)) (\(percent)%)"
