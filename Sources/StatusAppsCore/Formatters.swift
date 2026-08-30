@@ -43,6 +43,32 @@ public enum Formatters {
         value.count >= width ? value : value + String(repeating: " ", count: width - value.count)
     }
 
+    // MARK: - Menu rows
+
+    private static let portColumn = 8
+    private static let memoryColumn = 7
+    private static let uptimeColumn = 9
+
+    public static let serverRowHeader =
+        pad("PUERTO", to: portColumn) + pad("MEM", to: memoryColumn)
+        + pad("UP", to: uptimeColumn) + "PROCESO"
+
+    /// One aligned row: port, memory, how long it has been up, and what it is.
+    public static func serverRow(_ server: DevServer, now: Date = Date()) -> String {
+        let port = server.primaryPort.map { ":\($0)" } ?? "—"
+        return pad(port, to: portColumn)
+            + pad(memory(server.footprint), to: memoryColumn)
+            + pad(uptime(server.uptime(at: now)), to: uptimeColumn)
+            + "\(server.kind.displayName) — \(server.label)"
+    }
+
+    /// A server that is no longer running, labelled with how long ago it was last seen.
+    public static func recentRow(_ known: KnownServer, now: Date = Date()) -> String {
+        let port = known.primaryPort.map { " :\($0)" } ?? ""
+        let age = uptime(now.timeIntervalSince(known.lastSeen))
+        return "\(known.kind.displayName) — \(known.label)\(port) · hace \(age)"
+    }
+
     public static func swap(_ usage: SwapUsage) -> String {
         let percent = Int((usage.fraction * 100).rounded())
         return "Swap \(memory(usage.used)) / \(memory(usage.total)) (\(percent)%)"

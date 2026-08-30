@@ -77,7 +77,9 @@ public struct DevServer: Equatable {
     public var primaryPort: UInt16? { process.listeningPorts.first }
     public var footprint: UInt64 { process.physicalFootprint }
     public var workingDirectory: String { process.workingDirectory }
-    public var uptime: TimeInterval { Date().timeIntervalSince(process.startedAt) }
+    public var uptime: TimeInterval { uptime(at: Date()) }
+
+    public func uptime(at now: Date) -> TimeInterval { now.timeIntervalSince(process.startedAt) }
 }
 
 /// The last known state of a server, persisted so it can be relaunched after it dies.

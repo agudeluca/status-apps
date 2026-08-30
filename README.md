@@ -14,20 +14,24 @@ to tell apart.
 
 ```
 ⇅3  13.5G
-─────────────────────────────────────────────
-PUERTO  MEM    PROCESO
-:8082   4.6G   metro — humand-mobile/oli-barge-in
-:8081   4.5G   metro — humand-mobile/sqwh-378-pdf-workaround
-:8083   4.4G   metro — humand-mobile
-:3000   61M    bun — api
-─────────────────────────────────────────────
+──────────────────────────────────────────────────────────
+PUERTO  MEM    UP       PROCESO
+:8082   4.6G   9d 22h   metro — humand-mobile/oli-barge-in
+:8081   4.5G   10d      metro — humand-mobile/sqwh-378-pdf-workaround
+:8083   4.4G   9d 21h   metro — humand-mobile
+:3000   61M    48m      bun — api
+──────────────────────────────────────────────────────────
 ▸ Recientes (2)
-─────────────────────────────────────────────
+──────────────────────────────────────────────────────────
 Swap 10.5G / 12.0G (87%)
 ```
 
+The uptime column is what turns "three servers are running" into "three servers have been
+running for nine days". A bundler up for forty minutes is work in progress; one up for a week
+is something nobody remembered to stop.
+
 Each row opens a submenu with **Stop**, **Clean cache**, **Rerun**, **Attach (tmux)** and the
-project directory.
+project directory. Entries under **Recientes** show how long ago they were last seen.
 
 ## Install
 
@@ -101,11 +105,15 @@ persistent state, kept in `~/Library/Application Support/StatusApps/known.json`.
 
 ```sh
 make build
-make test     # 41 tests
+make test     # 46 tests
 make run      # bundle and launch without installing
 ```
 
-`StatusAppsCore` holds the logic and has no AppKit dependency, so it is tested directly.
+`StatusAppsCore` holds the logic and has no AppKit dependency, so it is tested directly. That
+includes the row layout: `Formatters.serverRow` composes the aligned columns, so column drift is
+caught by a test rather than noticed in the menu. `MenuBuilder` is left with nothing but `NSMenu`
+assembly.
+
 Classification and formatting are pure functions tested against fixtures captured from a real
 machine; the scanner has integration tests that open a socket and assert it finds itself.
 

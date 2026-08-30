@@ -46,7 +46,8 @@ El código se separa en dos targets para que la lógica sea testeable sin levant
 | `SystemMemory` | Uso de swap vía `sysctl`. | syscalls |
 | `ServerActions` | stop, clean, rerun, attach. Único módulo que lanza subprocesos. | tmux, watchman |
 | `KnownServersStore` | Persiste el último estado visto de cada servidor. | disco |
-| `MenuBuilder` | `[DevServer]` + swap -> `NSMenu`. Sin acceso al sistema. | nada |
+| `Formatters` | Render de las filas en columnas alineadas: puerto, memoria, uptime, proceso. | nada |
+| `MenuBuilder` | `[DevServer]` + swap -> `NSMenu`. Sin acceso al sistema. | `Formatters` |
 | `AppDelegate` | Status item, timer, cableado. | todos |
 
 La curación vive aislada en un módulo puro a propósito: es la parte que cambia cuando aparece
@@ -144,4 +145,8 @@ proceso de test se encuentra a sí mismo, con ese puerto y con un footprint mayo
 ## Resultado
 
 Implementado y verificado contra el sistema real: mismos procesos y mismos puertos que `lsof`,
-con un escaneo de unos 5 ms sobre 530 procesos. La app ocupa unos 11 MB. 41 tests en verde.
+con un escaneo de unos 5 ms sobre 530 procesos. La app ocupa unos 11 MB. 46 tests en verde.
+
+Cada fila muestra puerto, memoria, tiempo activo y proceso. El armado de la fila vive en
+`Formatters`, dentro de la librería, para que el alineado de columnas lo cubra un test en lugar
+de descubrirse mirando el menú.

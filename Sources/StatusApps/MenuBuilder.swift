@@ -27,9 +27,6 @@ struct MenuContext {
 
 enum MenuBuilder {
 
-    private static let portColumn = 8
-    private static let memoryColumn = 7
-
     /// What shows in the menu bar itself: how many servers are up and what they cost together.
     static func statusTitle(servers: [DevServer]) -> String {
         guard !servers.isEmpty else { return "⇅0" }
@@ -44,9 +41,7 @@ enum MenuBuilder {
         if context.servers.isEmpty {
             menu.addItem(NSMenuItem.label("Ningún dev server escuchando"))
         } else {
-            menu.addItem(NSMenuItem.label(
-                Formatters.pad("PUERTO", to: portColumn) + Formatters.pad("MEM", to: memoryColumn) + "PROCESO"
-            ))
+            menu.addItem(NSMenuItem.label(Formatters.serverRowHeader))
             for server in context.servers {
                 menu.addItem(serverItem(server, context: context, actions: actions))
             }
@@ -85,12 +80,9 @@ enum MenuBuilder {
     private static func serverItem(
         _ server: DevServer, context: MenuContext, actions: MenuActions
     ) -> NSMenuItem {
-        let port = server.primaryPort.map { ":\($0)" } ?? "—"
-        let title = Formatters.pad(port, to: portColumn)
-            + Formatters.pad(Formatters.memory(server.footprint), to: memoryColumn)
-            + "\(server.kind.displayName) — \(server.label)"
-
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "").monospaced()
+        let item = NSMenuItem(
+            title: Formatters.serverRow(server), action: nil, keyEquivalent: ""
+        ).monospaced()
         item.submenu = serverSubmenu(server, context: context, actions: actions)
         return item
     }
@@ -154,9 +146,8 @@ enum MenuBuilder {
         submenu.autoenablesItems = false
 
         for known in recent {
-            let port = known.primaryPort.map { " :\($0)" } ?? ""
             let entry = NSMenuItem(
-                title: "\(known.kind.displayName) — \(known.label)\(port)", action: nil, keyEquivalent: ""
+                title: Formatters.recentRow(known), action: nil, keyEquivalent: ""
             )
             let entryMenu = NSMenu()
             entryMenu.autoenablesItems = false

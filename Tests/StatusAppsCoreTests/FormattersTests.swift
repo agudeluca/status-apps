@@ -36,3 +36,75 @@ final class FormattersTests: XCTestCase {
         XCTAssertEqual(SwapUsage(total: 0, used: 0).fraction, 0)
     }
 }
+
+extension FormattersTests {
+
+    private var metro: DevServer {
+        DevServer(
+            process: Fixtures.metroInWorktree,
+            kind: .metro,
+            label: "humand-mobile/oli-barge-in"
+        )
+    }
+
+    /// The reference case: a Metro bundler up for nine days, which is the situation the app exists
+    /// to make visible.
+    func testServerRowPlacesEveryValueInItsColumn() {
+        let started = Fixtures.metroInWorktree.startedAt
+        let now = started.addingTimeInterval(9 * 86_400 + 22 * 3_600)
+
+        let row = Formatters.serverRow(metro, now: now)
+
+        XCTAssertEqual(row, ":8082   4.6G   9d 22h   metro — humand-mobile/oli-barge-in")
+    }
+
+    func testHeaderColumnsLineUpWithARow() {
+        let started = Fixtures.metroInWorktree.startedAt
+        let row = Formatters.serverRow(metro, now: started.addingTimeInterval(60))
+
+        for column in ["MEM", "UP", "PROCESO"] {
+            let headerOffset = try? XCTUnwrap(Formatters.serverRowHeader.range(of: column))
+            XCTAssertNotNil(headerOffset)
+        }
+        XCTAssertEqual(
+            Formatters.serverRowHeader.distance(
+                from: Formatters.serverRowHeader.startIndex,
+                to: Formatters.serverRowHeader.range(of: "PROCESO")!.lowerBound
+            ),
+            row.distance(from: row.startIndex, to: row.range(of: "metro —")!.lowerBound),
+            "the process column must start at the same offset in the header and in a row"
+        )
+    }
+
+    func testServerRowMarksAServerWithNoPort() {
+        let server = DevServer(
+            process: Fixtures.process(executablePath: "/bin/node", ports: []),
+            kind: .node,
+            label: "orphan"
+        )
+
+        XCTAssertTrue(Formatters.serverRow(server).hasPrefix("—"))
+    }
+
+    func testRecentRowSaysHowLongAgoItWasSeen() {
+        let seen = Date(timeIntervalSince1970: 1_788_000_000)
+        let known = KnownServer(
+            label: "humand-mobile/oli-barge-in", kind: .metro,
+            workingDirectory: "/p", arguments: ["node"], primaryPort: 8082, lastSeen: seen
+        )
+
+        let row = Formatters.recentRow(known, now: seen.addingTimeInterval(3 * 3_600))
+
+        XCTAssertEqual(row, "metro — humand-mobile/oli-barge-in :8082 · hace 3h")
+    }
+
+    func testRecentRowOmitsThePortWhenNoneWasRecorded() {
+        let seen = Date()
+        let known = KnownServer(
+            label: "worker", kind: .bun, workingDirectory: "/p",
+            arguments: ["bun"], primaryPort: nil, lastSeen: seen
+        )
+
+        XCTAssertEqual(Formatters.recentRow(known, now: seen), "bun — worker · hace 0s")
+    }
+}
