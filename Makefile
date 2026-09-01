@@ -14,7 +14,7 @@ install: app
 	rm -rf /Applications/StatusApps.app
 	cp -R StatusApps.app /Applications/
 	open /Applications/StatusApps.app
-	@echo "Instalada. Buscá ⇅ en la barra de menú."
+	@echo "Installed. Look for ⇅ in the menu bar."
 
 uninstall:
 	@pkill -x StatusApps 2>/dev/null || true

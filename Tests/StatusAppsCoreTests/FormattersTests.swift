@@ -62,14 +62,14 @@ extension FormattersTests {
         let started = Fixtures.metroInWorktree.startedAt
         let row = Formatters.serverRow(metro, now: started.addingTimeInterval(60))
 
-        for column in ["MEM", "UP", "PROCESO"] {
+        for column in ["MEM", "UP", "PROCESS"] {
             let headerOffset = try? XCTUnwrap(Formatters.serverRowHeader.range(of: column))
             XCTAssertNotNil(headerOffset)
         }
         XCTAssertEqual(
             Formatters.serverRowHeader.distance(
                 from: Formatters.serverRowHeader.startIndex,
-                to: Formatters.serverRowHeader.range(of: "PROCESO")!.lowerBound
+                to: Formatters.serverRowHeader.range(of: "PROCESS")!.lowerBound
             ),
             row.distance(from: row.startIndex, to: row.range(of: "metro —")!.lowerBound),
             "the process column must start at the same offset in the header and in a row"
@@ -95,7 +95,7 @@ extension FormattersTests {
 
         let row = Formatters.recentRow(known, now: seen.addingTimeInterval(3 * 3_600))
 
-        XCTAssertEqual(row, "metro — humand-mobile/oli-barge-in :8082 · hace 3h")
+        XCTAssertEqual(row, "metro — humand-mobile/oli-barge-in :8082 · 3h ago")
     }
 
     func testRecentRowOmitsThePortWhenNoneWasRecorded() {
@@ -105,7 +105,7 @@ extension FormattersTests {
             arguments: ["bun"], primaryPort: nil, lastSeen: seen
         )
 
-        XCTAssertEqual(Formatters.recentRow(known, now: seen), "bun — worker · hace 0s")
+        XCTAssertEqual(Formatters.recentRow(known, now: seen), "bun — worker · 0s ago")
     }
 }
 

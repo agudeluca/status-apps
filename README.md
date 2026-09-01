@@ -15,13 +15,13 @@ to tell apart.
 ```
 ⇅3  13.5G
 ──────────────────────────────────────────────────────────
-PUERTO  MEM    UP       PROCESO
+PORT    MEM    UP       PROCESS
 :8082   4.6G   9d 22h   metro — humand-mobile/oli-barge-in
 :8081   4.5G   10d      metro — humand-mobile/sqwh-378-pdf-workaround
 :8083   4.4G   9d 21h   metro — humand-mobile
 :3000   61M    48m      bun — api
 ──────────────────────────────────────────────────────────
-▸ Recientes (2)
+▸ Recent (2)
 ──────────────────────────────────────────────────────────
 Swap 10.5G / 12.0G (87%)
 ```
@@ -31,7 +31,7 @@ running for nine days". A bundler up for forty minutes is work in progress; one 
 is something nobody remembered to stop.
 
 Each row opens a submenu with **Stop**, **Clean cache**, **Rerun**, **Attach (tmux)** and the
-project directory. Entries under **Recientes** show how long ago they were last seen.
+project directory. Entries under **Recent** show how long ago they were last seen.
 
 ## Install
 
@@ -97,7 +97,7 @@ port, under a login shell so it picks up nvm and your `PATH`. The pane drops to 
 shell when the command exits, so a crash leaves its output there to read. Session names include
 the port because one directory can host several servers.
 
-**Recientes** lists servers seen before that are no longer running, so Rerun can bring back
+**Recent** lists servers seen before that are no longer running, so Rerun can bring back
 something that has already died — the case where it is actually useful. This is the app's only
 persistent state, kept in `~/Library/Application Support/StatusApps/known.json`.
 
