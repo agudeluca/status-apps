@@ -114,11 +114,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = servers.count == 1
-            ? "¿Parar 1 proceso?"
-            : "¿Parar \(servers.count) procesos?"
+            ? "Stop 1 process?"
+            : "Stop \(servers.count) processes?"
         alert.informativeText = Formatters.bulkStopSummary(servers)
-        alert.addButton(withTitle: "Cancelar")
-        let stopButton = alert.addButton(withTitle: "Parar")
+        alert.addButton(withTitle: "Cancel")
+        let stopButton = alert.addButton(withTitle: "Stop")
         stopButton.hasDestructiveAction = true
 
         NSApp.activate(ignoringOtherApps: true)
@@ -137,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func presentBulkFailure(_ outcome: BulkStopOutcome) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Se pararon \(outcome.stopped) de \(outcome.requested)"
+        alert.messageText = "Stopped \(outcome.stopped) of \(outcome.requested)"
         alert.informativeText = outcome.failures.joined(separator: "\n")
         alert.addButton(withTitle: "OK")
         NSApp.activate(ignoringOtherApps: true)
@@ -147,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func presentFailure(action: String, error: Error) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "\(action) no se completó"
+        alert.messageText = "\(action) failed"
         alert.informativeText = error.localizedDescription
         alert.addButton(withTitle: "OK")
         NSApp.activate(ignoringOtherApps: true)
@@ -171,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 try SMAppService.mainApp.register()
             }
         } catch {
-            presentFailure(action: "Abrir al iniciar sesión", error: error)
+            presentFailure(action: "Open at Login", error: error)
         }
     }
 }
@@ -180,6 +180,6 @@ private enum CleanResult: LocalizedError {
     case nothingToRemove
 
     var errorDescription: String? {
-        "No había caches de Metro para borrar."
+        "No Metro caches to remove."
     }
 }

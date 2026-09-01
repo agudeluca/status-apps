@@ -40,7 +40,7 @@ enum MenuBuilder {
         menu.autoenablesItems = false
 
         if context.servers.isEmpty {
-            menu.addItem(NSMenuItem.label("Ningún dev server escuchando"))
+            menu.addItem(NSMenuItem.label("No dev servers listening"))
         } else {
             menu.addItem(NSMenuItem.label(Formatters.serverRowHeader))
             for server in context.servers {
@@ -68,15 +68,15 @@ enum MenuBuilder {
         }
 
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem(title: "Refrescar", handler: actions.refresh))
+        menu.addItem(ClosureMenuItem(title: "Refresh", handler: actions.refresh))
 
         if let launchAtLogin = context.launchAtLogin {
-            let item = ClosureMenuItem(title: "Abrir al iniciar sesión", handler: actions.toggleLaunchAtLogin)
+            let item = ClosureMenuItem(title: "Open at Login", handler: actions.toggleLaunchAtLogin)
             item.state = launchAtLogin ? .on : .off
             menu.addItem(item)
         }
 
-        let quit = ClosureMenuItem(title: "Salir", handler: actions.quit)
+        let quit = ClosureMenuItem(title: "Quit", handler: actions.quit)
         quit.keyEquivalent = "q"
         menu.addItem(quit)
     }
@@ -100,20 +100,20 @@ enum MenuBuilder {
         submenu.autoenablesItems = false
 
         if let port = server.primaryPort {
-            submenu.addItem(ClosureMenuItem(title: "Abrir http://localhost:\(port)") {
+            submenu.addItem(ClosureMenuItem(title: "Open http://localhost:\(port)") {
                 actions.openBrowser(port)
             })
         }
 
         submenu.addItem(.separator())
         submenu.addItem(ClosureMenuItem(title: "Stop") { actions.stop(server, false) })
-        submenu.addItem(ClosureMenuItem(title: "Forzar kill (-9)") { actions.stop(server, true) })
+        submenu.addItem(ClosureMenuItem(title: "Force kill (-9)") { actions.stop(server, true) })
 
         let clean = ClosureMenuItem(title: "Clean cache", enabled: server.kind.supportsCacheClean) {
             actions.clean(server)
         }
         if !server.kind.supportsCacheClean {
-            clean.toolTip = "Solo Metro tiene una receta de limpieza conocida."
+            clean.toolTip = "Only Metro has a known cache recipe."
         }
         submenu.addItem(clean)
 
@@ -124,7 +124,7 @@ enum MenuBuilder {
             actions.attach(server)
         }
         if !context.tmuxAvailable {
-            let reason = "Requiere tmux: brew install tmux"
+            let reason = "Requires tmux: brew install tmux"
             rerun.toolTip = reason
             attach.toolTip = reason
         }
@@ -138,7 +138,7 @@ enum MenuBuilder {
 
         if !server.workingDirectory.isEmpty {
             let directory = server.workingDirectory
-            submenu.addItem(ClosureMenuItem(title: "Abrir carpeta") { actions.reveal(directory) })
+            submenu.addItem(ClosureMenuItem(title: "Reveal in Finder") { actions.reveal(directory) })
         }
 
         return submenu
@@ -150,25 +150,25 @@ enum MenuBuilder {
         let groups = DevServerClassifier.groupedByKind(servers)
 
         guard groups.count > 1 else {
-            return ClosureMenuItem(title: "Matar todos (\(servers.count))") {
+            return ClosureMenuItem(title: "Kill all (\(servers.count))") {
                 actions.stopMany(servers)
             }
         }
 
-        let item = NSMenuItem(title: "Matar…", action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: "Kill…", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
         submenu.autoenablesItems = false
 
         for group in groups {
             submenu.addItem(
-                ClosureMenuItem(title: "Todos los \(group.kind.displayName) (\(group.servers.count))") {
+                ClosureMenuItem(title: "All \(group.kind.displayName) (\(group.servers.count))") {
                     actions.stopMany(group.servers)
                 }
             )
         }
 
         submenu.addItem(.separator())
-        submenu.addItem(ClosureMenuItem(title: "Todo (\(servers.count))") {
+        submenu.addItem(ClosureMenuItem(title: "Everything (\(servers.count))") {
             actions.stopMany(servers)
         })
 
@@ -179,7 +179,7 @@ enum MenuBuilder {
     private static func recentItem(
         _ recent: [KnownServer], tmuxAvailable: Bool, actions: MenuActions
     ) -> NSMenuItem {
-        let item = NSMenuItem(title: "Recientes (\(recent.count))", action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: "Recent (\(recent.count))", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
         submenu.autoenablesItems = false
 
@@ -193,9 +193,9 @@ enum MenuBuilder {
             let rerun = ClosureMenuItem(title: "Rerun", enabled: tmuxAvailable) {
                 actions.rerunKnown(known)
             }
-            if !tmuxAvailable { rerun.toolTip = "Requiere tmux: brew install tmux" }
+            if !tmuxAvailable { rerun.toolTip = "Requires tmux: brew install tmux" }
             entryMenu.addItem(rerun)
-            entryMenu.addItem(ClosureMenuItem(title: "Olvidar") { actions.forget(known) })
+            entryMenu.addItem(ClosureMenuItem(title: "Forget") { actions.forget(known) })
             entryMenu.addItem(.separator())
 
             entryMenu.addItem(NSMenuItem.label(known.workingDirectory))

@@ -50,8 +50,8 @@ public enum Formatters {
     private static let uptimeColumn = 9
 
     public static let serverRowHeader =
-        pad("PUERTO", to: portColumn) + pad("MEM", to: memoryColumn)
-        + pad("UP", to: uptimeColumn) + "PROCESO"
+        pad("PORT", to: portColumn) + pad("MEM", to: memoryColumn)
+        + pad("UP", to: uptimeColumn) + "PROCESS"
 
     /// One aligned row: port, memory, how long it has been up, and what it is.
     public static func serverRow(_ server: DevServer, now: Date = Date()) -> String {
@@ -66,7 +66,7 @@ public enum Formatters {
     public static func recentRow(_ known: KnownServer, now: Date = Date()) -> String {
         let port = known.primaryPort.map { " :\($0)" } ?? ""
         let age = uptime(now.timeIntervalSince(known.lastSeen))
-        return "\(known.kind.displayName) — \(known.label)\(port) · hace \(age)"
+        return "\(known.kind.displayName) — \(known.label)\(port) · \(age) ago"
     }
 
     /// The body of the confirmation dialog: one line per process, so the choice is made against

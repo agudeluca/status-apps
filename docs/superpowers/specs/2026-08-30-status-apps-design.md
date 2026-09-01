@@ -1,152 +1,152 @@
-# Status Apps — diseño
+# Status Apps — design
 
-Fecha: 2026-08-30
+Date: 2026-08-30
 
-## Problema
+## Problem
 
-Tres bundlers de Metro quedaron corriendo diez días sin que nadie lo notara, ocupando
-13,5 GB de footprint entre los tres y empujando el swap a 19 GB de 20 GB. Activity Monitor
-mostraba tres procesos llamados `node` sin forma de distinguirlos: no expone el puerto que
-escuchan ni el directorio desde el que se lanzaron.
+Three Metro bundlers were left running for ten days without anyone noticing, holding
+13.5 GB of footprint between them and pushing swap to 19 GB of 20 GB. Activity Monitor
+showed three processes called `node` with no way to tell them apart: it exposes neither the
+port they listen on nor the directory they were launched from.
 
-La app resuelve la identificación: qué servidores de desarrollo están vivos, en qué puerto,
-desde qué proyecto y cuánta memoria real ocupan.
+The app solves identification: which development servers are alive, on which port, from which
+project, and how much memory they actually hold.
 
-## Alcance
+## Scope
 
-Una app de menu bar que lista **solo servidores de desarrollo**, con acciones de
-stop, clean y rerun sobre cada uno.
+A menu bar app listing **development servers only**, with stop, clean and rerun actions on
+each one.
 
-Explícitamente fuera de alcance:
+Explicitly out of scope:
 
-- Alertas, umbrales y notificaciones. La app es pasiva: informa cuando se abre el menú.
-- Procesos que no son de desarrollo (Logitech, `adb`, `wineserver`, agentes del sistema).
-- Gráficos históricos o series de tiempo.
+- Alerts, thresholds and notifications. The app is passive: it reports when the menu is opened.
+- Non-development processes (Logitech, `adb`, `wineserver`, system agents).
+- Historical charts or time series.
 
-## Arquitectura
+## Architecture
 
-App AppKit con `NSStatusItem`, empaquetada como `.app` con `LSUIElement = true` para que no
-aparezca en el Dock. Firma ad-hoc y sin sandbox: `libproc` necesita leer otros procesos del
-mismo usuario.
+An AppKit app with `NSStatusItem`, bundled as an `.app` with `LSUIElement = true` so it stays
+out of the Dock. Ad-hoc signed and unsandboxed: `libproc` needs to read other processes
+belonging to the same user.
 
-Se descartó SwiftUI `MenuBarExtra` porque los submenús por servidor se arman dinámicamente
-según el tipo, y `NSMenu` da control directo sobre eso.
+SwiftUI `MenuBarExtra` was ruled out because the per-server submenus are assembled dynamically
+by kind, and `NSMenu` gives direct control over that.
 
-El código se separa en dos targets para que la lógica sea testeable sin levantar la interfaz:
+The code is split into two targets so the logic can be tested without bringing up the interface:
 
-- `StatusAppsCore` — biblioteca. Escaneo, clasificación, acciones, persistencia.
-- `StatusApps` — ejecutable. Status item, menú, ciclo de vida.
+- `StatusAppsCore` — library. Scanning, classification, actions, persistence.
+- `StatusApps` — executable. Status item, menu, lifecycle.
 
-### Módulos
+### Modules
 
-| Módulo | Responsabilidad | Depende de |
+| Module | Responsibility | Depends on |
 |---|---|---|
-| `ProcessScanner` | Envuelve `libproc`. Devuelve `[RunningProcess]` sin aplicar ninguna política. | syscalls |
-| `DevServerClassifier` | Función pura `[RunningProcess] -> [DevServer]`. Toda la curación y el armado de etiquetas. | nada |
-| `SystemMemory` | Uso de swap vía `sysctl`. | syscalls |
-| `ServerActions` | stop, clean, rerun, attach. Único módulo que lanza subprocesos. | tmux, watchman |
-| `KnownServersStore` | Persiste el último estado visto de cada servidor. | disco |
-| `Formatters` | Render de las filas en columnas alineadas: puerto, memoria, uptime, proceso. | nada |
-| `MenuBuilder` | `[DevServer]` + swap -> `NSMenu`. Sin acceso al sistema. | `Formatters` |
-| `AppDelegate` | Status item, timer, cableado. | todos |
+| `ProcessScanner` | Wraps `libproc`. Returns `[RunningProcess]` with no policy applied. | syscalls |
+| `DevServerClassifier` | Pure function `[RunningProcess] -> [DevServer]`. All the curation and label building. | nothing |
+| `SystemMemory` | Swap usage via `sysctl`. | syscalls |
+| `ServerActions` | stop, clean, rerun, attach. The only module that spawns subprocesses. | tmux, watchman |
+| `KnownServersStore` | Persists the last seen state of each server. | disk |
+| `Formatters` | Renders rows in aligned columns: port, memory, uptime, process. | nothing |
+| `MenuBuilder` | `[DevServer]` + swap -> `NSMenu`. No system access. | `Formatters` |
+| `AppDelegate` | Status item, timer, wiring. | everything |
 
-La curación vive aislada en un módulo puro a propósito: es la parte que cambia cuando aparece
-un runtime nuevo, y así se ajusta sin tocar el escaneo ni la interfaz.
+Curation lives isolated in a pure module on purpose: it is the part that changes when a new
+runtime shows up, so it can be adjusted without touching scanning or the interface.
 
-### Escaneo
+### Scanning
 
-Nada de shelling out en el camino caliente. Se usan las mismas syscalls que `lsof` por dentro:
+No shelling out on the hot path. The same syscalls `lsof` uses internally:
 
-- `proc_listpids` para enumerar procesos.
-- `proc_pidinfo(PROC_PIDTBSDINFO)` para uid, pgid y arranque. Filtra por uid antes de seguir.
-- `proc_pidinfo(PROC_PIDLISTFDS)` + `proc_pidfdinfo(PROC_PIDFDSOCKETINFO)` para los sockets
-  TCP en estado `TSI_S_LISTEN`.
-- `proc_pid_rusage(RUSAGE_INFO_V4)` para `ri_phys_footprint`, el mismo número que muestra
-  Activity Monitor.
-- `sysctl(KERN_PROCARGS2)` para el argv completo.
-- `proc_pidinfo(PROC_PIDVNODEPATHINFO)` para el cwd.
+- `proc_listpids` to enumerate processes.
+- `proc_pidinfo(PROC_PIDTBSDINFO)` for uid, pgid and start time. Filters by uid before going on.
+- `proc_pidinfo(PROC_PIDLISTFDS)` + `proc_pidfdinfo(PROC_PIDFDSOCKETINFO)` for TCP sockets in
+  `TSI_S_LISTEN` state.
+- `proc_pid_rusage(RUSAGE_INFO_V4)` for `ri_phys_footprint`, the same figure Activity Monitor
+  shows.
+- `sysctl(KERN_PROCARGS2)` for the full argv.
+- `proc_pidinfo(PROC_PIDVNODEPATHINFO)` for the cwd.
 
-Validado contra `lsof`: mismos procesos y mismos puertos, en milisegundos en vez de dos segundos.
+Validated against `lsof`: same processes and same ports, in milliseconds instead of two seconds.
 
-## Reglas de curación
+## Curation rules
 
-Un proceso es dev server si tiene al menos un socket TCP en LISTEN del usuario **y**
-el ejecutable está en la allowlist (`node`, `bun`, `deno`, `python3`, `ruby`, `java`,
-`postgres`, `redis-server`, `php`) **o** el argv menciona
-`expo`, `metro`, `vite`, `next`, `webpack`, `rails`, `uvicorn` o `gunicorn`.
+A process is a dev server if it has at least one TCP socket in LISTEN owned by the user **and**
+its executable is in the allowlist (`node`, `bun`, `deno`, `python3`, `ruby`, `java`,
+`postgres`, `redis-server`, `php`) **or** its argv mentions
+`expo`, `metro`, `vite`, `next`, `webpack`, `rails`, `uvicorn` or `gunicorn`.
 
-Es allowlist, no denylist: `adb`, `wineserver` y los agentes de Logitech quedan afuera porque
-no están en la lista, no porque se los excluya uno por uno. No hay que perseguir cada app
-nueva que abra un puerto.
+It is an allowlist, not a denylist: `adb`, `wineserver` and Logitech's agents stay out because
+they are not on the list, not because they are excluded one by one. There is no need to chase
+every new app that opens a port.
 
-Postgres entra: es una dependencia de desarrollo legítima. Sacarlo es borrar una línea.
+Postgres is in: it is a legitimate development dependency. Removing it is deleting one line.
 
-### Etiquetas
+### Labels
 
-Derivadas del cwd, en este orden:
+Derived from the cwd, in this order:
 
-1. Si el path contiene `/.worktrees/<wt>`, la etiqueta es `<repo>/<wt>`.
-2. Si no, el basename del cwd.
-3. Si el cwd es `/`, está vacío o es ilegible, el nombre del ejecutable.
+1. If the path contains `/.worktrees/<wt>`, the label is `<repo>/<wt>`.
+2. Otherwise, the basename of the cwd.
+3. If the cwd is `/`, empty or unreadable, the executable name.
 
-## Acciones
+## Actions
 
-- **Stop** — `SIGTERM` al process group, no al pid. Un Metro es `yarn start` que lanza `node`;
-  matar solo el hijo deja el padre huérfano. A los cinco segundos, si sigue vivo, el menú
-  ofrece `SIGKILL`.
-- **Clean** — según el tipo. Metro borra `$TMPDIR/metro-*`, `haste-*` y `react-*`, más el
-  `.expo` del proyecto, y corre `watchman watch-del <cwd>`. Los demás tipos lo tienen
-  deshabilitado en lugar de inventar una receta.
-- **Rerun** — `tmux new-session -d -s <tipo>-<etiqueta> -c <cwd>` corriendo el argv original
-  bajo un shell de login, para que tome nvm y el PATH del usuario. Si la sesión ya existe,
-  se baja primero.
-- **Attach** — abre Terminal.app con `tmux attach -t <sesión>`.
+- **Stop** — `SIGTERM` to the process group, not the pid. A Metro is `yarn start` spawning
+  `node`; killing only the child leaves the parent orphaned. After five seconds, if it is still
+  alive, the menu offers `SIGKILL`.
+- **Clean** — per kind. Metro removes `$TMPDIR/metro-*`, `haste-*` and `react-*`, plus the
+  project's `.expo`, and runs `watchman watch-del <cwd>`. Other kinds have it disabled rather
+  than a made-up recipe.
+- **Rerun** — `tmux new-session -d -s <kind>-<label> -c <cwd>` running the original argv under a
+  login shell, so it picks up nvm and the user's PATH. If the session already exists, it is torn
+  down first.
+- **Attach** — opens Terminal.app with `tmux attach -t <session>`.
 
-## Persistencia
+## Persistence
 
-Un JSON en `~/Library/Application Support/StatusApps/known.json` guarda el último estado visto
-de cada servidor: etiqueta, tipo, cwd, argv y puerto. Los que ya no corren aparecen en una
-sección "Recientes" con una sola acción, Rerun.
+A JSON file at `~/Library/Application Support/StatusApps/known.json` stores the last seen state
+of each server: label, kind, cwd, argv and port. The ones no longer running show up in a
+"Recent" section with a single action, Rerun.
 
-Es la única persistencia de la app, y existe porque sin ella "rerun" sería apenas un restart
-de algo que ya está vivo. El valor está en relanzar lo que se murió.
+It is the app's only persistence, and it exists because without it "rerun" would be little more
+than restarting something that is already alive. The value is in relaunching what died.
 
-### Identidad de un servidor
+### Server identity
 
-La identidad es `tipo + cwd + argv`, no `tipo + cwd + etiqueta`. Un mismo directorio puede correr
-varios servidores: la máquina de referencia tenía dos procesos `bun` en `toto/apps/api`, en los
-puertos 3000 y 3999, y dos más llamados `scratchpad`. Con la etiqueta como clave se colapsaban
-en una sola entrada.
+Identity is `kind + cwd + argv`, not `kind + cwd + label`. One directory can run several
+servers: the reference machine had two `bun` processes in `toto/apps/api`, on ports 3000 and
+3999, plus two more called `scratchpad`. With the label as the key they collapsed into a single
+entry.
 
-Por la misma razón el nombre de sesión de tmux lleva el puerto (`bun-api-3000`, `bun-api-3999`),
-o un hash corto del cwd cuando no hay puerto: si colisionaran, un Rerun sobre uno bajaría la
-sesión del otro.
+For the same reason the tmux session name carries the port (`bun-api-3000`, `bun-api-3999`), or
+a short hash of the cwd when there is no port: if they collided, a Rerun on one would tear down
+the other's session.
 
-## Manejo de errores
+## Error handling
 
-- Cualquier llamada por pid que devuelva `EPERM` — procesos de otros usuarios — se saltea en
-  silencio. El scanner nunca propaga errores a la interfaz: degrada a menos filas.
-- Sin `tmux`, Rerun y Attach quedan deshabilitados con un tooltip que lo explica.
-- Sin `watchman`, ese paso de Clean se omite y el resto se ejecuta igual.
+- Any per-pid call returning `EPERM` — processes owned by other users — is skipped silently. The
+  scanner never propagates errors to the interface: it degrades to fewer rows.
+- Without `tmux`, Rerun and Attach are disabled with a tooltip explaining why.
+- Without `watchman`, that step of Clean is skipped and the rest runs anyway.
 
 ## Tests
 
-`DevServerClassifier` y el armado de etiquetas se testean con fixtures capturados de una máquina
-real y transcriptos a literales de Swift: son funciones puras, no tocan el sistema y corren en
-milisegundos. Los casos que importan son los paths de worktree, el cwd vacío, el cwd en `/` y los
-procesos que deben quedar fuera de la allowlist.
+`DevServerClassifier` and label building are tested with fixtures captured from a real machine
+and transcribed into Swift literals: they are pure functions, they do not touch the system and
+they run in milliseconds. The cases that matter are worktree paths, an empty cwd, a cwd of `/`
+and the processes that must fall outside the allowlist.
 
-`ProcessScanner` tiene un test de integración que abre un socket de escucha y verifica que el
-proceso de test se encuentra a sí mismo, con ese puerto y con un footprint mayor a cero.
+`ProcessScanner` has an integration test that opens a listening socket and verifies the test
+process finds itself, with that port and with a footprint greater than zero.
 
-`ServerActions` no se testea de forma automática porque muta el sistema. Se valida a mano.
+`ServerActions` is not tested automatically because it mutates the system. It is validated by
+hand.
 
 
-## Resultado
+## Outcome
 
-Implementado y verificado contra el sistema real: mismos procesos y mismos puertos que `lsof`,
-con un escaneo de unos 5 ms sobre 530 procesos. La app ocupa unos 11 MB. 46 tests en verde.
+Implemented and verified against the real system: same processes and same ports as `lsof`, with
+a scan of about 5 ms across 530 processes. The app itself holds around 11 MB. 46 tests green.
 
-Cada fila muestra puerto, memoria, tiempo activo y proceso. El armado de la fila vive en
-`Formatters`, dentro de la librería, para que el alineado de columnas lo cubra un test en lugar
-de descubrirse mirando el menú.
+Each row shows port, memory, uptime and process. Row assembly lives in `Formatters`, inside the
+library, so column alignment is covered by a test rather than discovered by looking at the menu.
