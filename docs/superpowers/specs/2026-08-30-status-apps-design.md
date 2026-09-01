@@ -44,6 +44,7 @@ The code is split into two targets so the logic can be tested without bringing u
 | `ProcessScanner` | Wraps `libproc`. Returns `[RunningProcess]` with no policy applied. | syscalls |
 | `DevServerClassifier` | Pure function `[RunningProcess] -> [DevServer]`. All the curation and label building. | nothing |
 | `SystemMemory` | Swap usage via `sysctl`. | syscalls |
+| `ActivityMonitor` | Differences resource counters between scans to decide who is working. | nothing |
 | `ServerActions` | stop, clean, rerun, attach. The only module that spawns subprocesses. | tmux, watchman |
 | `KnownServersStore` | Persists the last seen state of each server. | disk |
 | `Formatters` | Renders rows in aligned columns: port, memory, uptime, process. | nothing |
@@ -102,10 +103,51 @@ Derived from the cwd, in this order:
   down first.
 - **Attach** — opens Terminal.app with `tmux attach -t <session>`.
 
+## Detecting use
+
+`uptime` answers how long a server has been running, which is the wrong question. The three
+bundlers that prompted this app had been up for ten days *and* untouched for six; the gap between
+those numbers is the signal.
+
+`proc_pid_rusage` was already being called for memory, and the same struct carries
+`ri_user_time`, `ri_system_time` and `ri_diskio_bytesread`. The activity column therefore costs
+no extra syscalls. Those counters are cumulative since launch, so a single reading is meaningless
+and only the difference between two scans is a rate — which is why `ActivityMonitor` holds state
+while the rest of the curation stays pure.
+
+A server counts as working above 0.2% of one core over the window, or 512 KB read from disk.
+Measured against the real machine: every idle server sat at 0.00–0.01% of a core reading nothing,
+while the one bundler rebuilding hit 1.79% and read 55 MB in five seconds. The gap is wide enough
+that the exact thresholds barely matter. CPU is the primary signal and disk the second chance,
+because a bundler rebuilding reads its sources but a server answering from an in-memory cache
+does not.
+
+Counting established TCP connections was the first candidate — free, from the descriptor walk
+`listeningPorts` already does — and it was rejected on measurement. An idle bundler held six
+established sockets at 0.01% CPU: simulators and browser tabs keep connections open indefinitely.
+The count measures whether something is attached, not whether anything is happening.
+
+### What the number does not claim
+
+It is the last use *observed by the app*. A rate needs two samples, so a server is reported as
+unknown (`—`) rather than idle until it has been watched across a window, and time while the app
+is not running is invisible. Launch at login is what makes the column continuous.
+
+Three cases produce no reading rather than a wrong one: the first sight of a server, a recycled
+pid (detected by comparing `startedAt`, since the new process restarts its counters), and two
+scans landing closer together than a second, which would divide by nearly zero and read as a
+burst of work. That last one is not hypothetical — `AppDelegate` refreshes on a timer *and* when
+the menu opens.
+
+The threshold leans towards over-reporting activity: calling a busy server idle invites killing
+something in use, while calling an idle one busy costs one extra window in the list.
+
 ## Persistence
 
 A JSON file at `~/Library/Application Support/StatusApps/known.json` stores the last seen state
-of each server: label, kind, cwd, argv and port. The ones no longer running show up in a
+of each server: label, kind, cwd, argv, port and the last time it was seen working. That last
+field is optional, because `load` discards a file it cannot decode: a required field would have
+silently wiped every remembered server on upgrade, taking Rerun with it. The ones no longer running show up in a
 "Recent" section with a single action, Rerun.
 
 It is the app's only persistence, and it exists because without it "rerun" would be little more
@@ -146,7 +188,11 @@ hand.
 ## Outcome
 
 Implemented and verified against the real system: same processes and same ports as `lsof`, with
-a scan of about 5 ms across 530 processes. The app itself holds around 11 MB. 46 tests green.
+a scan of about 5 ms across 530 processes. The app itself holds around 11 MB. 79 tests green.
+
+Activity detection was verified end to end with two processes identical but for their behaviour:
+a `python3` listening on a port while spinning the CPU was stamped as used, and one listening on
+a port while sleeping was never stamped.
 
 Each row shows port, memory, uptime and process. Row assembly lives in `Formatters`, inside the
 library, so column alignment is covered by a test rather than discovered by looking at the menu.

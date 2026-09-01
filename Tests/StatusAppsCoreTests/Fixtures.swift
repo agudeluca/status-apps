@@ -13,7 +13,9 @@ enum Fixtures {
         workingDirectory: String = "",
         footprint: UInt64 = 1024,
         ports: [UInt16] = [8080],
-        startedAt: Date = Date(timeIntervalSince1970: 1_788_000_000)
+        startedAt: Date = Date(timeIntervalSince1970: 1_788_000_000),
+        cpuTime: UInt64 = 0,
+        diskBytesRead: UInt64 = 0
     ) -> RunningProcess {
         RunningProcess(
             pid: pid,
@@ -23,7 +25,9 @@ enum Fixtures {
             workingDirectory: workingDirectory,
             startedAt: startedAt,
             physicalFootprint: footprint,
-            listeningPorts: ports
+            listeningPorts: ports,
+            cpuTime: cpuTime,
+            diskBytesRead: diskBytesRead
         )
     }
 

@@ -14,6 +14,7 @@ public enum ProcessScanner {
             guard let info = bsdInfo(pid), info.pbi_uid == uid else { return nil }
             let ports = listeningPorts(pid)
             guard !ports.isEmpty else { return nil }
+            let usage = resourceUsage(pid)
             return RunningProcess(
                 pid: pid,
                 processGroupID: Int32(bitPattern: info.pbi_pgid),
@@ -21,8 +22,10 @@ public enum ProcessScanner {
                 arguments: arguments(pid),
                 workingDirectory: workingDirectory(pid) ?? "",
                 startedAt: Date(timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec)),
-                physicalFootprint: physicalFootprint(pid),
-                listeningPorts: ports
+                physicalFootprint: usage.physicalFootprint,
+                listeningPorts: ports,
+                cpuTime: usage.cpuTime,
+                diskBytesRead: usage.diskBytesRead
             )
         }
     }
@@ -90,14 +93,27 @@ public enum ProcessScanner {
 
     // MARK: - Per-process details
 
-    static func physicalFootprint(_ pid: pid_t) -> UInt64 {
+    struct ResourceUsage {
+        var physicalFootprint: UInt64 = 0
+        var cpuTime: UInt64 = 0
+        var diskBytesRead: UInt64 = 0
+    }
+
+    /// Memory and the two activity counters, from the single `proc_pid_rusage` call that was
+    /// already being made for memory alone. The activity columns cost no extra syscalls.
+    static func resourceUsage(_ pid: pid_t) -> ResourceUsage {
         var usage = rusage_info_v4()
         let result = withUnsafeMutablePointer(to: &usage) { pointer -> Int32 in
             pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
                 proc_pid_rusage(pid, RUSAGE_INFO_V4, $0)
             }
         }
-        return result == 0 ? usage.ri_phys_footprint : 0
+        guard result == 0 else { return ResourceUsage() }
+        return ResourceUsage(
+            physicalFootprint: usage.ri_phys_footprint,
+            cpuTime: usage.ri_user_time &+ usage.ri_system_time,
+            diskBytesRead: usage.ri_diskio_bytesread
+        )
     }
 
     static func executablePath(_ pid: pid_t) -> String? {
