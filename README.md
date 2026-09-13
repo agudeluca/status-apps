@@ -36,14 +36,22 @@ project directory. Entries under **Recent** show how long ago they were last see
 ## Install
 
 ```sh
-make install
+curl -fsSL https://raw.githubusercontent.com/agudeluca/status-apps/main/scripts/install.sh | bash
 ```
 
-Builds the app, copies it to `/Applications` and launches it. Look for `⇅` in the menu bar.
-`make uninstall` removes both the app and its stored state.
+Clones the repo into `~/.local/share/status-apps`, builds the app, copies it to `/Applications`
+and launches it. Look for `⇅` in the menu bar. The same command run again updates an existing
+install, and `~/.local/share/status-apps/scripts/install.sh --uninstall` removes the app, its
+stored state and the checkout.
 
-Requires macOS 13 or later. `tmux` is needed for Rerun and Attach; `watchman` is used by Clean
-when present. Both are optional — the affected items disable themselves and explain why.
+It builds on the machine rather than downloading a binary. The bundle is signed ad-hoc, and an
+ad-hoc bundle that arrives over the network is quarantined — macOS would refuse to open it until
+the attribute had been stripped by hand. A local build has nothing to work around.
+
+Requires macOS 13 or later and the Xcode command line tools (`xcode-select --install`); the
+script checks both before it touches anything. `tmux` is needed for Rerun and Attach; `watchman`
+is used by Clean when present. Both are optional — the affected items disable themselves and
+explain why.
 
 ## How it works
 
@@ -107,7 +115,11 @@ persistent state, kept in `~/Library/Application Support/StatusApps/known.json`.
 make build
 make test     # 46 tests
 make run      # bundle and launch without installing
+make install  # install the working tree, no clone involved
 ```
+
+`scripts/install.sh` does the same from a checkout — it builds the tree it sits in rather than
+cloning, so the one-command install and a local one take the same path.
 
 `StatusAppsCore` holds the logic and has no AppKit dependency, so it is tested directly. That
 includes the row layout: `Formatters.serverRow` composes the aligned columns, so column drift is
