@@ -11,6 +11,10 @@ APP_NAME="StatusApps"
 BUNDLE="${APP_NAME}.app"
 VERSION="${VERSION:-1.0.0}"
 
+# The checkout is recorded in the bundle so the app can watch it for updates and rebuild from it.
+# Escaped, because a path is allowed characters the plist would otherwise read as markup.
+SOURCE_PATH="$(pwd | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')"
+
 echo "==> Building release binary"
 swift build -c release --product "$APP_NAME"
 BINARY="$(swift build -c release --product "$APP_NAME" --show-bin-path)/$APP_NAME"
@@ -33,6 +37,7 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>StatusAppsSourcePath</key><string>${SOURCE_PATH}</string>
     <key>LSUIElement</key><true/>
     <key>NSHumanReadableCopyright</key><string>MIT</string>
 </dict>

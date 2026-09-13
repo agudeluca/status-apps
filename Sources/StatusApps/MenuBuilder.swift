@@ -14,6 +14,8 @@ struct MenuActions {
     var reveal: (String) -> Void
     var forget: (KnownServer) -> Void
     var refresh: () -> Void
+    var checkForUpdate: () -> Void
+    var installUpdate: () -> Void
     var toggleLaunchAtLogin: () -> Void
     var quit: () -> Void
 }
@@ -24,6 +26,7 @@ struct MenuContext {
     var swap: SwapUsage?
     var tmuxAvailable: Bool
     var launchAtLogin: Bool?
+    var update: UpdateState = .unavailable
 }
 
 enum MenuBuilder {
@@ -68,6 +71,9 @@ enum MenuBuilder {
         }
 
         menu.addItem(.separator())
+        if let update = updateItem(context.update, actions: actions) {
+            menu.addItem(update)
+        }
         menu.addItem(ClosureMenuItem(title: "Refresh", handler: actions.refresh))
 
         if let launchAtLogin = context.launchAtLogin {
@@ -206,5 +212,31 @@ enum MenuBuilder {
 
         item.submenu = submenu
         return item
+    }
+
+    /// Nothing is shown while the app is current, so the row itself is the news. A failed check
+    /// stays clickable to try again; a blocked one explains itself the way the tmux items do.
+    private static func updateItem(_ state: UpdateState, actions: MenuActions) -> NSMenuItem? {
+        switch state {
+        case .unavailable, .upToDate:
+            return nil
+
+        case .inProgress:
+            return NSMenuItem.label("Updating…", monospaced: false)
+
+        case .failed(let reason):
+            let item = ClosureMenuItem(title: "Update failed", handler: actions.checkForUpdate)
+            item.toolTip = reason
+            return item
+
+        case .available(let update):
+            let item = ClosureMenuItem(
+                title: Formatters.updateTitle(update), enabled: update.blocked == nil
+            ) {
+                actions.installUpdate()
+            }
+            item.toolTip = update.blocked ?? update.subjects.joined(separator: "\n")
+            return item
+        }
     }
 }
