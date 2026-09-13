@@ -26,6 +26,9 @@ struct MenuContext {
     var swap: SwapUsage?
     var tmuxAvailable: Bool
     var launchAtLogin: Bool?
+    /// When each running server was last seen doing work, keyed by identity. Absent means the app
+    /// has not watched it long enough to say.
+    var lastUsed: [String: Date] = [:]
     var update: UpdateState = .unavailable
 }
 
@@ -93,7 +96,8 @@ enum MenuBuilder {
         _ server: DevServer, context: MenuContext, actions: MenuActions
     ) -> NSMenuItem {
         let item = NSMenuItem(
-            title: Formatters.serverRow(server), action: nil, keyEquivalent: ""
+            title: Formatters.serverRow(server, lastUsed: context.lastUsed[server.identity]),
+            action: nil, keyEquivalent: ""
         ).monospaced()
         item.submenu = serverSubmenu(server, context: context, actions: actions)
         return item
@@ -139,7 +143,9 @@ enum MenuBuilder {
 
         submenu.addItem(.separator())
         submenu.addItem(NSMenuItem.label(
-            "PID \(server.pid) · up \(Formatters.uptime(server.uptime)) · \(Formatters.ports(server.ports))"
+            "PID \(server.pid) · up \(Formatters.uptime(server.uptime))"
+            + " · idle \(Formatters.idle(since: context.lastUsed[server.identity]))"
+            + " · \(Formatters.ports(server.ports))"
         ))
 
         if !server.workingDirectory.isEmpty {

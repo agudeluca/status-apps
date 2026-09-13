@@ -119,4 +119,73 @@ extension KnownServersStoreTests {
         XCTAssertEqual(store.recentlyStopped(excluding: []).count, 2)
         XCTAssertEqual(store.recentlyStopped(excluding: [api]).map(\.primaryPort), [3999])
     }
+
+    // MARK: - Last used
+
+    func testAnActiveServerIsStampedWithTheTimeItWasSeenWorking() {
+        let store = KnownServersStore(fileURL: fileURL)
+        let alpha = server(label: "alpha")
+        let now = Date(timeIntervalSince1970: 1_788_000_000)
+
+        store.record([alpha], active: [alpha.identity], now: now)
+
+        XCTAssertEqual(store.lastUsed(for: alpha), now)
+    }
+
+    func testAnIdleServerKeepsTheLastTimeItWasSeenWorking() {
+        let store = KnownServersStore(fileURL: fileURL)
+        let alpha = server(label: "alpha")
+        let used = Date(timeIntervalSince1970: 1_788_000_000)
+        store.record([alpha], active: [alpha.identity], now: used)
+
+        // Six days of scans where it did nothing must not keep pushing the stamp forward,
+        // otherwise the idle column could never grow past one refresh interval.
+        store.record([alpha], active: [], now: used.addingTimeInterval(6 * 86_400))
+
+        XCTAssertEqual(store.lastUsed(for: alpha), used)
+    }
+
+    func testLastUsedIsUnknownForAServerNeverSeenWorking() {
+        let store = KnownServersStore(fileURL: fileURL)
+        let alpha = server(label: "alpha")
+
+        store.record([alpha])
+
+        XCTAssertNil(store.lastUsed(for: alpha))
+    }
+
+    func testLastUsedSurvivesAReload() throws {
+        let used = Date(timeIntervalSince1970: 1_788_000_000)
+        let alpha = server(label: "alpha")
+        let store = KnownServersStore(fileURL: fileURL)
+        store.record([alpha], active: [alpha.identity], now: used)
+
+        let reloaded = KnownServersStore(fileURL: fileURL)
+
+        XCTAssertEqual(
+            try XCTUnwrap(reloaded.lastUsed(for: alpha)).timeIntervalSince1970,
+            used.timeIntervalSince1970,
+            accuracy: 0.001
+        )
+    }
+
+    /// A file written before `lastUsedAt` existed has to keep loading. `load` throws the whole
+    /// file away when decoding fails, so getting this wrong would silently wipe every remembered
+    /// server on upgrade — losing Rerun for everything that was not running at the time.
+    func testAStoredFileWithoutLastUsedStillLoads() throws {
+        let legacy = """
+        [{"label":"alpha","kind":"metro","workingDirectory":"/p/alpha",\
+        "arguments":[],"primaryPort":8080,"lastSeen":780000000}]
+        """
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try Data(legacy.utf8).write(to: fileURL)
+
+        let store = KnownServersStore(fileURL: fileURL)
+
+        let entries = store.recentlyStopped(excluding: [])
+        XCTAssertEqual(entries.map(\.label), ["alpha"])
+        XCTAssertNil(entries.first?.lastUsedAt)
+    }
 }
