@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
     private let store = KnownServersStore()
+    private let activity = ActivityMonitor()
     private var timer: Timer?
     private var servers: [DevServer] = []
 
@@ -33,21 +34,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Refreshing
 
     /// Rescans and updates the menu bar title. The menu itself is rebuilt on open.
+    ///
+    /// The activity comparison lives here rather than in the menu because it needs to run on every
+    /// scan, not only the ones where somebody is looking: idle time is measured by the windows
+    /// that pass unobserved.
     private func refresh() {
+        let now = Date()
         servers = DevServerClassifier.classify(ProcessScanner.scanListeningProcesses())
-        store.record(servers)
+        store.record(servers, active: activity.activeIdentities(among: servers, now: now), now: now)
         statusItem.button?.title = MenuBuilder.statusTitle(servers: servers)
     }
 
     /// AppKit calls this before the menu is shown, which is the only moment its contents matter.
     func menuNeedsUpdate(_ menu: NSMenu) {
         refresh()
+        var lastUsed: [String: Date] = [:]
+        for server in servers { lastUsed[server.identity] = store.lastUsed(for: server) }
+
         let context = MenuContext(
             servers: servers,
             recent: store.recentlyStopped(excluding: servers),
             swap: SystemMemory.swapUsage(),
             tmuxAvailable: ServerActions.tmuxPath != nil,
-            launchAtLogin: launchAtLoginState()
+            launchAtLogin: launchAtLoginState(),
+            lastUsed: lastUsed
         )
         MenuBuilder.populate(menu, context: context, actions: makeActions())
     }

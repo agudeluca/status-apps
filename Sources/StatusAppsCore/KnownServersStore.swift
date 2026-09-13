@@ -24,19 +24,29 @@ public final class KnownServersStore {
         return base.appendingPathComponent("StatusApps/known.json")
     }
 
-    /// Updates the record for every server currently running.
-    public func record(_ servers: [DevServer], now: Date = Date()) {
+    /// Updates the record for every server currently running, stamping the ones that were seen
+    /// working. Servers not in `active` keep whatever last-used time they already had, so a long
+    /// idle stretch accumulates instead of resetting on every scan.
+    public func record(_ servers: [DevServer], active: Set<String> = [], now: Date = Date()) {
         for server in servers {
-            let known = KnownServer(server: server, lastSeen: now)
-            entries[known.identity] = known
+            let identity = server.identity
+            var known = KnownServer(server: server, lastSeen: now)
+            known.lastUsedAt = active.contains(identity) ? now : entries[identity]?.lastUsedAt
+            entries[identity] = known
         }
         prune(now: now)
         save()
     }
 
+    /// When this server was last seen doing work, or `nil` if it has not been observed working —
+    /// which includes every server for the first few seconds after the app starts.
+    public func lastUsed(for server: DevServer) -> Date? {
+        entries[server.identity]?.lastUsedAt
+    }
+
     /// Servers seen before that are not running now, most recent first.
     public func recentlyStopped(excluding running: [DevServer]) -> [KnownServer] {
-        let live = Set(running.map { KnownServer(server: $0).identity })
+        let live = Set(running.map(\.identity))
         return entries.values
             .filter { !live.contains($0.identity) }
             .sorted { $0.lastSeen > $1.lastSeen }

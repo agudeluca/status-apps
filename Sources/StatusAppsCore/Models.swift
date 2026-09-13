@@ -12,6 +12,11 @@ public struct RunningProcess: Codable, Equatable {
     /// Bytes, from `ri_phys_footprint` — the figure Activity Monitor shows.
     public let physicalFootprint: UInt64
     public let listeningPorts: [UInt16]
+    /// Nanoseconds of CPU burned since launch, user plus system. Cumulative and monotonic: on its
+    /// own it says nothing, but the difference between two scans is the work done in between.
+    public let cpuTime: UInt64
+    /// Bytes read from disk since launch. Cumulative in the same way.
+    public let diskBytesRead: UInt64
 
     public init(
         pid: Int32,
@@ -21,7 +26,9 @@ public struct RunningProcess: Codable, Equatable {
         workingDirectory: String,
         startedAt: Date,
         physicalFootprint: UInt64,
-        listeningPorts: [UInt16]
+        listeningPorts: [UInt16],
+        cpuTime: UInt64 = 0,
+        diskBytesRead: UInt64 = 0
     ) {
         self.pid = pid
         self.processGroupID = processGroupID
@@ -31,6 +38,8 @@ public struct RunningProcess: Codable, Equatable {
         self.startedAt = startedAt
         self.physicalFootprint = physicalFootprint
         self.listeningPorts = listeningPorts
+        self.cpuTime = cpuTime
+        self.diskBytesRead = diskBytesRead
     }
 
     public var executableName: String {
@@ -60,6 +69,16 @@ public enum DevServerKind: String, Codable, CaseIterable {
     public var supportsCacheClean: Bool { self == .metro }
 }
 
+/// Identity across restarts: the same command in the same directory is the same server, even
+/// though its pid and port change. Defined once so the running form and the persisted form can
+/// never drift apart and start keying the same server two different ways.
+///
+/// Keyed on the arguments rather than the label, because one project can run several servers from
+/// the same directory — two `bun` entry points, or a bundler and an API side by side.
+func serverIdentity(kind: DevServerKind, workingDirectory: String, arguments: [String]) -> String {
+    ([kind.rawValue, workingDirectory] + arguments).joined(separator: "\u{1}")
+}
+
 /// A running process that the classifier recognised as a development server.
 public struct DevServer: Equatable {
     public let process: RunningProcess
@@ -80,6 +99,10 @@ public struct DevServer: Equatable {
     public var uptime: TimeInterval { uptime(at: Date()) }
 
     public func uptime(at now: Date) -> TimeInterval { now.timeIntervalSince(process.startedAt) }
+
+    public var identity: String {
+        serverIdentity(kind: kind, workingDirectory: workingDirectory, arguments: process.arguments)
+    }
 }
 
 /// The last known state of a server, persisted so it can be relaunched after it dies.
@@ -90,6 +113,12 @@ public struct KnownServer: Codable, Equatable {
     public let arguments: [String]
     public let primaryPort: UInt16?
     public var lastSeen: Date
+    /// When the server was last seen doing measurable work, as opposed to merely existing.
+    ///
+    /// Optional, and not only for the obvious reason that a server may never have been observed
+    /// working: a stored file written before this field existed has to keep decoding, and a
+    /// missing key has to mean "unknown" rather than throwing the whole file away.
+    public var lastUsedAt: Date?
 
     public init(
         label: String,
@@ -97,7 +126,8 @@ public struct KnownServer: Codable, Equatable {
         workingDirectory: String,
         arguments: [String],
         primaryPort: UInt16?,
-        lastSeen: Date
+        lastSeen: Date,
+        lastUsedAt: Date? = nil
     ) {
         self.label = label
         self.kind = kind
@@ -105,25 +135,22 @@ public struct KnownServer: Codable, Equatable {
         self.arguments = arguments
         self.primaryPort = primaryPort
         self.lastSeen = lastSeen
+        self.lastUsedAt = lastUsedAt
     }
 
-    /// Identity across restarts: the same command in the same directory is the same server,
-    /// even though its pid and port may change.
-    ///
-    /// Keyed on the arguments rather than the label, because one project can run several servers
-    /// from the same directory — two `bun` entry points, or a bundler and an API side by side.
     public var identity: String {
-        ([kind.rawValue, workingDirectory] + arguments).joined(separator: "\u{1}")
+        serverIdentity(kind: kind, workingDirectory: workingDirectory, arguments: arguments)
     }
 
-    public init(server: DevServer, lastSeen: Date = Date()) {
+    public init(server: DevServer, lastSeen: Date = Date(), lastUsedAt: Date? = nil) {
         self.init(
             label: server.label,
             kind: server.kind,
             workingDirectory: server.workingDirectory,
             arguments: server.process.arguments,
             primaryPort: server.primaryPort,
-            lastSeen: lastSeen
+            lastSeen: lastSeen,
+            lastUsedAt: lastUsedAt
         )
     }
 }

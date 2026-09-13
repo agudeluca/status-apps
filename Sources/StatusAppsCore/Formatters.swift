@@ -48,18 +48,40 @@ public enum Formatters {
     private static let portColumn = 8
     private static let memoryColumn = 7
     private static let uptimeColumn = 9
+    private static let idleColumn = 9
 
     public static let serverRowHeader =
         pad("PORT", to: portColumn) + pad("MEM", to: memoryColumn)
-        + pad("UP", to: uptimeColumn) + "PROCESS"
+        + pad("UP", to: uptimeColumn) + pad("IDLE", to: idleColumn) + "PROCESS"
 
-    /// One aligned row: port, memory, how long it has been up, and what it is.
-    public static func serverRow(_ server: DevServer, now: Date = Date()) -> String {
+    /// One aligned row: port, memory, how long it has been up, how long since it did anything,
+    /// and what it is.
+    ///
+    /// UP and IDLE earn their place side by side. Either alone is ambiguous — up for ten days is
+    /// fine for a database, idle for six days is fine for something started an hour ago — but the
+    /// pair reads as a verdict: up 9d 22h, idle 6d 4h is a bundler nobody remembered to stop.
+    public static func serverRow(
+        _ server: DevServer, lastUsed: Date? = nil, now: Date = Date()
+    ) -> String {
         let port = server.primaryPort.map { ":\($0)" } ?? "—"
         return pad(port, to: portColumn)
             + pad(memory(server.footprint), to: memoryColumn)
             + pad(uptime(server.uptime(at: now)), to: uptimeColumn)
+            + pad(idle(since: lastUsed, now: now), to: idleColumn)
             + "\(server.kind.displayName) — \(server.label)"
+    }
+
+    /// How long since the server last did measurable work.
+    ///
+    /// `—` when it has never been seen working. That is not the same as "idle forever": the
+    /// counters are cumulative, so a rate needs two scans, and until the app has watched a server
+    /// across a window it genuinely does not know. Printing a zero there would be a lie that
+    /// happens to look like data.
+    public static func idle(since lastUsed: Date?, now: Date = Date()) -> String {
+        guard let lastUsed else { return "—" }
+        let interval = now.timeIntervalSince(lastUsed)
+        // Anything inside a minute is being used right now; the exact seconds are noise.
+        return interval < 60 ? "active" : uptime(interval)
     }
 
     /// A server that is no longer running, labelled with how long ago it was last seen.

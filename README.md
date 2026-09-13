@@ -15,11 +15,11 @@ to tell apart.
 ```
 ⇅3  13.5G
 ──────────────────────────────────────────────────────────
-PORT    MEM    UP       PROCESS
-:8082   4.6G   9d 22h   metro — humand-mobile/oli-barge-in
-:8081   4.5G   10d      metro — humand-mobile/sqwh-378-pdf-workaround
-:8083   4.4G   9d 21h   metro — humand-mobile
-:3000   61M    48m      bun — api
+PORT    MEM    UP       IDLE     PROCESS
+:8082   4.6G   9d 22h   6d 4h    metro — humand-mobile/oli-barge-in
+:8081   4.5G   10d      2m       metro — humand-mobile/sqwh-378-pdf-workaround
+:8083   4.4G   9d 21h   9d 20h   metro — humand-mobile
+:3000   61M    48m      active   bun — api
 ──────────────────────────────────────────────────────────
 ▸ Recent (2)
 ──────────────────────────────────────────────────────────
@@ -29,6 +29,11 @@ Swap 10.5G / 12.0G (87%)
 The uptime column is what turns "three servers are running" into "three servers have been
 running for nine days". A bundler up for forty minutes is work in progress; one up for a week
 is something nobody remembered to stop.
+
+UP alone is still ambiguous, though — the first two rows have been up about as long, and only
+one of them is dead weight. IDLE is the time since the server last did measurable work, and the
+pair reads as a verdict: up nine days and untouched for six is a bundler to kill, while up ten
+days and idle two minutes is the one you are working in right now.
 
 Each row opens a submenu with **Stop**, **Clean cache**, **Rerun**, **Attach (tmux)** and the
 project directory. Entries under **Recent** show how long ago they were last seen.
@@ -54,6 +59,7 @@ Monitor use, with no subprocesses on the hot path:
 |---|---|
 | Listening TCP ports | `proc_pidinfo(PROC_PIDLISTFDS)` + `proc_pidfdinfo(PROC_PIDFDSOCKETINFO)`, filtered to `TSI_S_LISTEN` |
 | Memory | `proc_pid_rusage(RUSAGE_INFO_V4).ri_phys_footprint` — the figure Activity Monitor shows |
+| Activity | `ri_user_time + ri_system_time` and `ri_diskio_bytesread`, from the same call |
 | Command | `sysctl(KERN_PROCARGS2)` |
 | Directory | `proc_pidinfo(PROC_PIDVNODEPATHINFO)` |
 | Swap | `sysctlbyname("vm.swapusage")` |
@@ -65,6 +71,31 @@ hogs if it were one.
 `ri_phys_footprint` matters here. An idle Metro bundler reports an RSS near 200 MB because most
 of it has been compressed or swapped out, while its real footprint is 4.5 GB. Reading `rss`
 would have understated these processes by a factor of twenty.
+
+## Detecting use
+
+The counters are cumulative since launch, so a single reading says nothing; the difference
+between two scans is a rate. A server counts as working when it burns more than 0.2% of a core
+over the window, or reads more than 512 KB from disk. Measured on a real machine the two cases
+are far apart: every idle server sat at 0.00–0.01% of a core and read nothing, while the one
+bundler actually rebuilding hit 1.79% and read 55 MB. The threshold sits in a wide gap, so its
+exact value barely matters.
+
+Counting established TCP connections would have been the obvious approach, and it does not work.
+An idle bundler on that same machine held six established sockets while using 0.01% of a core:
+browser tabs and simulators keep connections open indefinitely. That number says whether someone
+is attached, not whether anything is happening.
+
+IDLE reads `—` until the app has watched a server across two scans. That is not the same as
+"idle forever", and printing a zero there would be a lie that looks like data. It also means the
+column is only as continuous as the app is: leaving it running — the **Open at Login** toggle —
+is what makes a six-day idle reading possible.
+
+The threshold leans towards over-reporting activity. Calling a busy server idle invites killing
+something in use, whereas calling an idle one busy just leaves it in the list one window longer.
+Individual quiet windows may still be missed on a lightly used server, which does not affect the
+reading that matters: a server touched even occasionally trips the threshold sometime within any
+given day, so "idle 6d" stays trustworthy even though "idle 30s" is approximate.
 
 ## What counts as a development server
 
@@ -99,7 +130,8 @@ the port because one directory can host several servers.
 
 **Recent** lists servers seen before that are no longer running, so Rerun can bring back
 something that has already died — the case where it is actually useful. This is the app's only
-persistent state, kept in `~/Library/Application Support/StatusApps/known.json`.
+persistent state, kept in `~/Library/Application Support/StatusApps/known.json`, which also
+carries each server's last-used time so IDLE survives a restart.
 
 ## Development
 
