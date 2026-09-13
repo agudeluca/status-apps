@@ -82,4 +82,20 @@ public enum Formatters {
         let percent = Int((usage.fraction * 100).rounded())
         return "Swap \(memory(usage.used)) / \(memory(usage.total)) (\(percent)%)"
     }
+
+    // MARK: - Updates
+
+    /// The count carries the weight here: "update available" says nothing about whether it is a
+    /// typo fix or a fortnight of work.
+    public static func updateTitle(_ update: PendingUpdate) -> String {
+        "Update available (\(update.count) commit\(update.count == 1 ? "" : "s"))"
+    }
+
+    /// The body of the confirmation: what is about to be installed, and the part that surprises
+    /// people — the app disappears and comes back on its own.
+    public static func updateSummary(_ update: PendingUpdate, source: String) -> String {
+        let subjects = update.subjects.map { "• \($0)" }.joined(separator: "\n")
+        let outcome = "Rebuilds from \(source), then restarts."
+        return subjects.isEmpty ? outcome : subjects + "\n\n" + outcome
+    }
 }

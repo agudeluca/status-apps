@@ -129,3 +129,38 @@ extension FormattersTests {
         XCTAssertEqual(summary.split(separator: "\n").count, servers.count)
     }
 }
+
+extension FormattersTests {
+
+    func testUpdateTitleCountsCommits() {
+        XCTAssertEqual(
+            Formatters.updateTitle(PendingUpdate(count: 1, subjects: [])),
+            "Update available (1 commit)"
+        )
+        XCTAssertEqual(
+            Formatters.updateTitle(PendingUpdate(count: 12, subjects: [])),
+            "Update available (12 commits)"
+        )
+    }
+
+    func testUpdateSummaryListsTheCommitsAndTheConsequence() {
+        let update = PendingUpdate(count: 2, subjects: ["Add an IDLE column", "Install in one command"])
+
+        let summary = Formatters.updateSummary(update, source: "/src/status-apps")
+
+        XCTAssertEqual(summary, """
+        • Add an IDLE column
+        • Install in one command
+
+        Rebuilds from /src/status-apps, then restarts.
+        """)
+    }
+
+    /// A check can find commits it cannot name — a shallow clone, an unreadable log — and the
+    /// dialog still has to say what pressing Update does.
+    func testUpdateSummaryStandsWithoutSubjects() {
+        let summary = Formatters.updateSummary(PendingUpdate(count: 1, subjects: []), source: "/src")
+
+        XCTAssertEqual(summary, "Rebuilds from /src, then restarts.")
+    }
+}

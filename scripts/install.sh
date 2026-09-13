@@ -82,14 +82,26 @@ if [ "$LOCAL" = 1 ]; then
   echo "==> Building the checkout in $SRC"
 elif [ -d "$SRC/.git" ]; then
   echo "==> Updating $SRC"
+  # An existing checkout is followed where it already points: updating a clone of a feature branch
+  # should not drag it back to main. An explicit STATUS_APPS_REPO or STATUS_APPS_BRANCH still wins.
+  upstream="$(git -C "$SRC" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+  if [ -n "$upstream" ]; then
+    tracked_repo="${STATUS_APPS_REPO:-$(git -C "$SRC" remote get-url "${upstream%%/*}")}"
+    tracked_branch="${STATUS_APPS_BRANCH:-${upstream#*/}}"
+  else
+    tracked_repo="$REPO"
+    tracked_branch="$BRANCH"
+  fi
   # Fetching by URL rather than by remote name keeps this working if the clone predates a
   # change of STATUS_APPS_REPO. The checkout is disposable, so a hard reset is safe.
-  git -C "$SRC" fetch --depth 1 "$REPO" "$BRANCH"
+  git -C "$SRC" fetch "$tracked_repo" "$tracked_branch"
   git -C "$SRC" reset --hard FETCH_HEAD
 else
   echo "==> Cloning into $SRC"
   mkdir -p "$(dirname "$SRC")"
-  git clone --depth 1 --branch "$BRANCH" "$REPO" "$SRC"
+  # Full history rather than a shallow clone: the app counts the commits it is behind, and in a
+  # shallow clone every fetch looks like exactly one.
+  git clone --branch "$BRANCH" "$REPO" "$SRC"
 fi
 
 "$SRC/scripts/bundle.sh"

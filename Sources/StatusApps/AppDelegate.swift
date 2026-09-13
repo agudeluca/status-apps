@@ -7,11 +7,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Fast enough to feel live, cheap enough to ignore: a scan is a few milliseconds.
     private static let refreshInterval: TimeInterval = 5
 
+    /// A fetch over the network, against a repository that changes a few times a week at most.
+    private static let updateCheckInterval: TimeInterval = 6 * 60 * 60
+
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
     private let store = KnownServersStore()
     private var timer: Timer?
     private var servers: [DevServer] = []
+
+    private let updateSource = SelfUpdate.bundledSourcePath
+    private var updateState: UpdateState = .unavailable
+    private var updateTimer: Timer?
+    private var updateProcess: Process?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -24,10 +32,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: Self.refreshInterval, repeats: true) { [weak self] _ in
             self?.refresh()
         }
+
+        checkForUpdate()
+        updateTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.updateCheckInterval, repeats: true
+        ) { [weak self] _ in
+            self?.checkForUpdate()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+        updateTimer?.invalidate()
     }
 
     // MARK: - Refreshing
@@ -47,7 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             recent: store.recentlyStopped(excluding: servers),
             swap: SystemMemory.swapUsage(),
             tmuxAvailable: ServerActions.tmuxPath != nil,
-            launchAtLogin: launchAtLoginState()
+            launchAtLogin: launchAtLoginState(),
+            update: updateState
         )
         MenuBuilder.populate(menu, context: context, actions: makeActions())
     }
@@ -85,6 +102,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.refresh()
             },
             refresh: { [weak self] in self?.refresh() },
+            checkForUpdate: { [weak self] in self?.checkForUpdate() },
+            installUpdate: { [weak self] in self?.installUpdate() },
             toggleLaunchAtLogin: { [weak self] in self?.toggleLaunchAtLogin() },
             quit: { NSApp.terminate(nil) }
         )
@@ -152,6 +171,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.addButton(withTitle: "OK")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
+    }
+
+    // MARK: - Updating
+
+    /// Kept off the scan timer: this one talks to the network and spawns git. The menu draws
+    /// whatever the last check left behind, so opening it never waits.
+    private func checkForUpdate() {
+        guard let source = updateSource, updateState != .inProgress else { return }
+        DispatchQueue.global(qos: .utility).async {
+            let state = SelfUpdate.check(in: source)
+            DispatchQueue.main.async { [weak self] in
+                // An update started while the check was in flight outranks its result.
+                guard self?.updateState != .inProgress else { return }
+                self?.updateState = state
+            }
+        }
+    }
+
+    /// Asks first, because the app is about to be rebuilt, killed and reopened under the user.
+    private func installUpdate() {
+        guard let source = updateSource,
+              case .available(let update) = updateState,
+              update.blocked == nil
+        else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Update Status Apps?"
+        alert.informativeText = Formatters.updateSummary(update, source: source)
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Update")
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+
+        updateState = .inProgress
+        do {
+            updateProcess = try SelfUpdate.apply(
+                in: source,
+                // Wherever this copy lives, so the update lands on top of it rather than in
+                // /Applications by default.
+                destination: Bundle.main.bundleURL.deletingLastPathComponent().path,
+                logPath: SelfUpdate.defaultLogURL().path,
+                onFailure: { reason in
+                    DispatchQueue.main.async { [weak self] in self?.updateState = .failed(reason) }
+                }
+            )
+        } catch {
+            updateState = .failed(error.localizedDescription)
+            presentFailure(action: "Update", error: error)
+        }
     }
 
     // MARK: - Launch at login
