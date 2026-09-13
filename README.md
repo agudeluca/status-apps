@@ -41,14 +41,55 @@ project directory. Entries under **Recent** show how long ago they were last see
 ## Install
 
 ```sh
-make install
+curl -fsSL https://raw.githubusercontent.com/agudeluca/status-apps/main/scripts/install.sh | bash
 ```
 
-Builds the app, copies it to `/Applications` and launches it. Look for `⇅` in the menu bar.
-`make uninstall` removes both the app and its stored state.
+Clones the repo into `~/.local/share/status-apps`, builds the app, copies it to `/Applications`
+and launches it. Look for `⇅` in the menu bar. The same command run again updates an existing
+install, and `~/.local/share/status-apps/scripts/install.sh --uninstall` removes the app, its
+stored state and the checkout.
 
-Requires macOS 13 or later. `tmux` is needed for Rerun and Attach; `watchman` is used by Clean
-when present. Both are optional — the affected items disable themselves and explain why.
+It builds on the machine rather than downloading a binary. The bundle is signed ad-hoc, and an
+ad-hoc bundle that arrives over the network is quarantined — macOS would refuse to open it until
+the attribute had been stripped by hand. A local build has nothing to work around.
+
+Requires macOS 13 or later and the Xcode command line tools (`xcode-select --install`); the
+script checks both before it touches anything. `tmux` is needed for Rerun and Attach; `watchman`
+is used by Clean when present. Both are optional — the affected items disable themselves and
+explain why.
+
+## Updating
+
+The app watches the checkout it was built from, and offers the update in the menu:
+
+```
+──────────────────────────────────────────────────────────
+Update available (2 commits)
+Refresh
+Open at Login                                            ✓
+Quit
+```
+
+The row is only there when something is waiting, so a menu without it means the app is current.
+Its tooltip names the commits; choosing it rebuilds and relaunches. What actually runs is
+`scripts/install.sh`, the same script the one-command install runs — the app knows how to ask for
+an update, not how to build one.
+
+`scripts/bundle.sh` records the checkout in the bundle's `Info.plist`, which is how a copy in
+`/Applications` knows where it came from. A binary run straight out of `swift build` has no
+bundle, and no row.
+
+The count is what makes the row worth reading: two commits and a fortnight of them are different
+decisions. Getting it right is also why the install clones the full history — in a shallow clone
+every fetch looks like exactly one commit.
+
+The check runs at launch and every six hours, off the scan timer. It is a `git fetch`, so the
+menu draws the last answer rather than waiting for a new one, and a failed check becomes an
+**Update failed** row that retries when chosen rather than a silence. An update is offered only
+while the checkout is clean, since installing resets it — with uncommitted changes in it the row
+says so and stays disabled. A build that fails leaves the end of
+`~/Library/Application Support/StatusApps/update.log` in the tooltip; a build that succeeds takes
+the app down mid-way and reopens the copy it just wrote, which is why the confirmation says so.
 
 ## How it works
 
@@ -137,9 +178,13 @@ carries each server's last-used time so IDLE survives a restart.
 
 ```sh
 make build
-make test     # 46 tests
+make test     # 93 tests
 make run      # bundle and launch without installing
+make install  # install the working tree, no clone involved
 ```
+
+`scripts/install.sh` does the same from a checkout — it builds the tree it sits in rather than
+cloning, so the one-command install and a local one take the same path.
 
 `StatusAppsCore` holds the logic and has no AppKit dependency, so it is tested directly. That
 includes the row layout: `Formatters.serverRow` composes the aligned columns, so column drift is
